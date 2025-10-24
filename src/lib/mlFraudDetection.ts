@@ -169,6 +169,40 @@ export class MLFraudDetector {
     }
   }
 
+  // Detect anti-detect browsers specifically
+  private detectAntiDetectBrowser(fingerprintData: any): string[] {
+    const signals: string[] = []
+    
+    // Check for GoLogin specific indicators
+    if (fingerprintData.gologin) {
+      signals.push('gologin_detected')
+    }
+    
+    // Check for stealth mode
+    if (fingerprintData.stealthMode) {
+      signals.push('stealth_mode')
+    }
+    
+    // Check for automation signals
+    if (fingerprintData.automationSignals && fingerprintData.automationSignals.length > 0) {
+      signals.push('automation_signals')
+    }
+    
+    // Check for suspicious browser properties
+    if (!navigator.permissions) signals.push('no_permissions')
+    if (!navigator.mediaDevices) signals.push('no_media_devices')
+    if (navigator.plugins.length === 0) signals.push('no_plugins')
+    
+    // Check for suspicious hardware
+    if (navigator.hardwareConcurrency === 0) signals.push('no_hardware_concurrency')
+    if ((navigator as any).deviceMemory === 0) signals.push('no_device_memory')
+    
+    // Check for timing anomalies
+    if (performance.now() < 100) signals.push('suspicious_timing')
+    
+    return signals
+  }
+
   // Detect fraud using ML and bot detection
   public async detectFraud(fingerprintData: any): Promise<MLFraudDetectionResult> {
     const features = this.extractFeatures(fingerprintData)
@@ -198,7 +232,7 @@ export class MLFraudDetector {
       
       if (fingerprintData.gologin) {
         botSignals.push('gologin_detected')
-        riskScore += 3
+        riskScore += 5  // Higher risk score for GoLogin
       }
       
       if (fingerprintData.puppeteer) {
@@ -263,6 +297,11 @@ export class MLFraudDetector {
       }
     }
 
+    // Anti-detect browser detection
+    const antiDetectSignals = this.detectAntiDetectBrowser(fingerprintData)
+    botSignals.push(...antiDetectSignals)
+    riskScore += antiDetectSignals.length * 3  // Higher weight for anti-detect signals
+    
     // Rule-based anomaly detection
     const ruleBasedAnomalies = this.detectRuleBasedAnomalies(fingerprintData)
     anomalies.push(...ruleBasedAnomalies)
@@ -272,7 +311,7 @@ export class MLFraudDetector {
     confidence = Math.min(confidence + (anomalies.length * 0.1), 1)
 
     return {
-      isFraudulent: riskScore >= 5 || mlScore > 0.7 || botSignals.length > 0,
+      isFraudulent: riskScore >= 3 || mlScore > 0.5 || botSignals.length > 0 || anomalies.length >= 2,
       confidence,
       riskScore,
       anomalies,
@@ -309,6 +348,21 @@ export class MLFraudDetector {
     // Check for automation signals
     if (fingerprintData.webdriver || fingerprintData.selenium || fingerprintData.phantom) {
       anomalies.push('automation_detected')
+    }
+    
+    // Enhanced anti-detect browser detection
+    if (fingerprintData.gologin) {
+      anomalies.push('anti_detect_browser')
+    }
+    
+    // Check for stealth mode indicators
+    if (fingerprintData.stealthMode) {
+      anomalies.push('stealth_mode_detected')
+    }
+    
+    // Check for automation signals array
+    if (fingerprintData.automationSignals && fingerprintData.automationSignals.length > 0) {
+      anomalies.push('multiple_automation_signals')
     }
 
     // Check for suspicious timing

@@ -4,25 +4,120 @@ import { supabase } from './supabase'
 
 let fpPromise: Promise<any> | null = null
 
-// Enhanced automation detection methods
+// Enhanced anti-detect browser detection methods
 const detectGoLogin = () => {
-  // Check for GoLogin specific indicators
-  const indicators = [
-    // Check for GoLogin specific properties
-    !!(window as any).gologin,
-    !!(window as any).gologinProfile,
-    !!(window as any).gologinBrowser,
-    // Check for modified navigator properties
-    navigator.webdriver === false && (window as any).chrome && !(window as any).chrome.runtime,
-    // Check for suspicious user agent patterns
-    /GoLogin|Automation|Headless/i.test(navigator.userAgent),
-    // Check for missing or modified properties
-    !navigator.plugins || navigator.plugins.length === 0,
-    // Check for timing inconsistencies
-    performance.now() < 100
-  ]
+  const indicators = []
   
-  return indicators.filter(Boolean).length >= 2
+  // Check for GoLogin specific properties
+  if (!!(window as any).gologin) indicators.push('gologin_window_property')
+  if (!!(window as any).gologinProfile) indicators.push('gologin_profile')
+  if (!!(window as any).gologinBrowser) indicators.push('gologin_browser')
+  if (!!(window as any).gologinAPI) indicators.push('gologin_api')
+  
+  // Check for modified navigator properties (common in anti-detect browsers)
+  if (navigator.webdriver === false && (window as any).chrome && !(window as any).chrome.runtime) {
+    indicators.push('modified_chrome_runtime')
+  }
+  
+  // Check for suspicious user agent patterns
+  if (/GoLogin|Automation|Headless|Stealth/i.test(navigator.userAgent)) {
+    indicators.push('suspicious_user_agent')
+  }
+  
+  // Check for missing or modified properties
+  if (!navigator.plugins || navigator.plugins.length === 0) {
+    indicators.push('no_plugins')
+  }
+  
+  // Check for timing inconsistencies
+  if (performance.now() < 100) {
+    indicators.push('suspicious_timing')
+  }
+  
+  // Check for canvas fingerprinting evasion
+  try {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.textBaseline = 'top'
+      ctx.font = '14px Arial'
+      ctx.fillText('test', 2, 2)
+      const imageData = ctx.getImageData(0, 0, 100, 100)
+      if (imageData.data.every(pixel => pixel === 0)) {
+        indicators.push('canvas_evasion')
+      }
+    }
+  } catch (e) {
+    indicators.push('canvas_error')
+  }
+  
+  // Check for WebGL fingerprinting evasion
+  try {
+    const canvas = document.createElement('canvas')
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl') as WebGLRenderingContext
+    if (gl) {
+      const renderer = gl.getParameter(gl.RENDERER)
+      const vendor = gl.getParameter(gl.VENDOR)
+      if (!renderer || !vendor || renderer === 'null' || vendor === 'null') {
+        indicators.push('webgl_evasion')
+      }
+    }
+  } catch (e) {
+    indicators.push('webgl_error')
+  }
+  
+  // Check for missing browser APIs that anti-detect browsers often remove
+  if (!navigator.permissions) indicators.push('no_permissions_api')
+  if (!navigator.mediaDevices) indicators.push('no_media_devices_api')
+  if (!navigator.serviceWorker) indicators.push('no_service_worker_api')
+  
+  // Check for suspicious hardware information
+  if (navigator.hardwareConcurrency === 0) indicators.push('no_hardware_concurrency')
+  if ((navigator as any).deviceMemory === 0) indicators.push('no_device_memory')
+  
+  // Check for automation signals
+  if (!!(window as any).webdriver) indicators.push('webdriver_present')
+  if (!!(window as any).selenium) indicators.push('selenium_present')
+  if (!!(window as any).phantom) indicators.push('phantom_present')
+  
+  // Check for headless indicators
+  if (!!(window as any).headless) indicators.push('headless_indicator')
+  if (!!(window as any).__nightmare) indicators.push('nightmare_indicator')
+  if (!!(window as any).callPhantom) indicators.push('phantom_call')
+  
+  // Check for suspicious screen properties
+  if (window.screen.width === 0 || window.screen.height === 0) {
+    indicators.push('invalid_screen_size')
+  }
+  
+  // Check for suspicious timezone
+  try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (!timezone || timezone === 'UTC') {
+      indicators.push('suspicious_timezone')
+    }
+  } catch (e) {
+    indicators.push('timezone_error')
+  }
+  
+  // Check for suspicious language settings
+  if (navigator.language === 'en-US' && navigator.languages.length === 1) {
+    indicators.push('suspicious_language')
+  }
+  
+  // Check for missing or suspicious plugins
+  if (navigator.plugins.length === 0) {
+    indicators.push('no_plugins')
+  } else {
+    // Check for suspicious plugin patterns
+    const pluginNames = Array.from(navigator.plugins).map(p => p.name).join(',')
+    if (/automation|selenium|phantom|headless/i.test(pluginNames)) {
+      indicators.push('suspicious_plugins')
+    }
+  }
+  
+  // Return true if we have multiple indicators (more sophisticated detection)
+  return indicators.length >= 3
 }
 
 const detectPuppeteer = () => {
