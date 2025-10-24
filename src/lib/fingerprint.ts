@@ -569,6 +569,102 @@ export const getUrlVisitCount = async (urlId: string) => {
   }
 }
 
+// Diagnostic function to test visit tracking
+export const diagnoseVisitTracking = async () => {
+  const results = {
+    supabaseConnected: false,
+    urlVisitsTableExists: false,
+    canInsertVisit: false,
+    fingerprintAvailable: false,
+    errors: [] as string[]
+  }
+
+  try {
+    console.log('🔍 Starting visit tracking diagnosis...')
+    
+    // Test 1: Check Supabase connection
+    try {
+      const { data, error } = await supabase.from('urls').select('count').limit(1)
+      if (error) {
+        results.errors.push(`Supabase connection failed: ${error.message}`)
+      } else {
+        results.supabaseConnected = true
+        console.log('✅ Supabase connection working')
+      }
+    } catch (err) {
+      results.errors.push(`Supabase connection error: ${err}`)
+    }
+
+    // Test 2: Check if url_visits table exists
+    try {
+      const { data, error } = await supabase.from('url_visits').select('count').limit(1)
+      if (error) {
+        results.errors.push(`url_visits table issue: ${error.message}`)
+      } else {
+        results.urlVisitsTableExists = true
+        console.log('✅ url_visits table accessible')
+      }
+    } catch (err) {
+      results.errors.push(`url_visits table error: ${err}`)
+    }
+
+    // Test 3: Check fingerprint availability
+    try {
+      const fingerprint = await getOrCreateFingerprint()
+      if (fingerprint) {
+        results.fingerprintAvailable = true
+        console.log('✅ Fingerprint available:', fingerprint.id)
+      } else {
+        results.errors.push('No fingerprint available')
+      }
+    } catch (err) {
+      results.errors.push(`Fingerprint error: ${err}`)
+    }
+
+    // Test 4: Try to insert a test visit (if we have a URL)
+    try {
+      const { data: testUrl } = await supabase.from('urls').select('id').limit(1).single()
+      if (testUrl) {
+        const testVisitData = {
+          url_id: testUrl.id,
+          fingerprint_id: null,
+          ip_address: null,
+          referrer: 'diagnostic-test',
+          user_agent: 'diagnostic-test',
+          visited_at: new Date().toISOString(),
+          metadata: { test: true }
+        }
+        
+        const { error: insertError } = await supabase
+          .from('url_visits')
+          .insert(testVisitData)
+        
+        if (insertError) {
+          results.errors.push(`Visit insert failed: ${insertError.message}`)
+        } else {
+          results.canInsertVisit = true
+          console.log('✅ Can insert visits')
+          
+          // Clean up test visit
+          await supabase.from('url_visits').delete().eq('referrer', 'diagnostic-test')
+        }
+      } else {
+        results.errors.push('No URLs found to test visit insertion')
+      }
+    } catch (err) {
+      results.errors.push(`Visit insert test error: ${err}`)
+    }
+
+    console.log('🔍 Diagnosis complete:', results)
+    return results
+    
+  } catch (error) {
+    results.errors.push(`Diagnosis failed: ${error}`)
+    console.error('❌ Diagnosis error:', error)
+    return results
+  }
+}
+
 // Check rate limit
 export const checkRateLimit = async (fingerprintId: string, actionType: string) => {
   try {

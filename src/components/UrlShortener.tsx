@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase, Url, Fingerprint } from '../lib/supabase'
-import { getOrCreateFingerprint, checkRateLimit, logRiskEvent, logUrlVisit, getUrlVisitCount } from '../lib/fingerprint'
+import { getOrCreateFingerprint, checkRateLimit, logRiskEvent, logUrlVisit, getUrlVisitCount, diagnoseVisitTracking } from '../lib/fingerprint'
 import { performFraudDetection } from '../lib/fraudDetection'
 import { AdvancedFraudDetector } from '../lib/advancedFraudDetection'
 import { mlFraudDetector } from '../lib/mlFraudDetection'
@@ -13,6 +13,7 @@ const UrlShortener: React.FC = () => {
   const [fingerprint, setFingerprint] = useState<Fingerprint | null>(null)
   const [visitCount, setVisitCount] = useState<number | null>(null)
   const [testingVisits, setTestingVisits] = useState(false)
+  const [diagnosing, setDiagnosing] = useState(false)
 
   useEffect(() => {
     // Initialize fingerprint on component mount
@@ -362,6 +363,39 @@ const UrlShortener: React.FC = () => {
     }
   }
 
+  const runDiagnostics = async () => {
+    setDiagnosing(true)
+    try {
+      console.log('🔍 Running visit tracking diagnostics...')
+      const results = await diagnoseVisitTracking()
+      
+      console.log('📊 Diagnostic Results:', results)
+      
+      if (results.errors.length === 0) {
+        toast.success('✅ All diagnostics passed! Visit tracking should work.')
+      } else {
+        const errorMessage = results.errors.join('; ')
+        toast.error(`❌ Issues found: ${errorMessage}`)
+        console.error('❌ Diagnostic errors:', results.errors)
+      }
+      
+      // Show detailed results in console
+      console.log('📊 Detailed Results:', {
+        supabaseConnected: results.supabaseConnected,
+        urlVisitsTableExists: results.urlVisitsTableExists,
+        canInsertVisit: results.canInsertVisit,
+        fingerprintAvailable: results.fingerprintAvailable,
+        errors: results.errors
+      })
+      
+    } catch (error) {
+      console.error('Error running diagnostics:', error)
+      toast.error('Failed to run diagnostics')
+    } finally {
+      setDiagnosing(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8">
@@ -456,6 +490,15 @@ const UrlShortener: React.FC = () => {
                   >
                     {testingVisits ? 'Testing...' : 'Test Visit'}
                   </button>
+                  
+                  {/* Diagnostic Button */}
+                  <button
+                    onClick={runDiagnostics}
+                    disabled={diagnosing}
+                    className="px-3 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200 transition-colors disabled:opacity-50"
+                  >
+                    {diagnosing ? 'Diagnosing...' : 'Diagnose'}
+                  </button>
                 </div>
               </div>
             )}
@@ -534,6 +577,19 @@ REACT_APP_SUPABASE_ANON_KEY=your-anon-key-here`}
                 <div>
                   <h4 className="font-medium text-gray-900 mb-2">5. Restart the App</h4>
                   <p>Restart the development server to load the new environment variables</p>
+                </div>
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="font-medium text-blue-900 mb-2">🔧 Troubleshooting</h4>
+                  <p className="text-sm text-blue-800 mb-3">
+                    If you're getting "visit tracking failed" messages, click the diagnostic button below to identify the issue:
+                  </p>
+                  <button
+                    onClick={runDiagnostics}
+                    disabled={diagnosing}
+                    className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    {diagnosing ? 'Running Diagnostics...' : 'Run Diagnostics'}
+                  </button>
                 </div>
               </div>
             </div>

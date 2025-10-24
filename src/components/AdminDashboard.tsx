@@ -64,9 +64,43 @@ const AdminDashboard: React.FC = () => {
   const loadDashboardData = async () => {
     try {
       setLoading(true)
+      console.log('📊 Loading dashboard data...')
 
       // Load comprehensive stats using dashboard function
-      const { data: dashboardStats } = await supabase.rpc('get_dashboard_stats')
+      let dashboardStats: any = null
+      const { data: statsData, error: statsError } = await supabase.rpc('get_dashboard_stats')
+      
+      if (statsError) {
+        console.error('❌ Error with dashboard stats function:', statsError)
+        // Fallback: get stats directly from database
+        console.log('🔄 Falling back to direct database queries...')
+        
+        const [
+          { count: totalUrls },
+          { count: totalVisits },
+          { count: highRiskFingerprints },
+          { count: recentRiskLogs }
+        ] = await Promise.all([
+          supabase.from('urls').select('*', { count: 'exact', head: true }).eq('is_active', true),
+          supabase.from('url_visits').select('*', { count: 'exact', head: true }),
+          supabase.from('fingerprints').select('*', { count: 'exact', head: true }).gte('risk_score', 5),
+          supabase.from('risk_logs').select('*', { count: 'exact', head: true }).gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+        ])
+        
+        console.log('📊 Direct stats:', { totalUrls, totalVisits, highRiskFingerprints, recentRiskLogs })
+        
+        // Use direct stats if dashboard function fails
+        dashboardStats = {
+          total_urls: totalUrls || 0,
+          total_visits: totalVisits || 0,
+          high_risk_fingerprints: highRiskFingerprints || 0,
+          risk_events_24h: recentRiskLogs || 0,
+          active_rate_limits: 0
+        }
+      } else {
+        dashboardStats = statsData
+        console.log('✅ Dashboard stats loaded:', dashboardStats)
+      }
       
       // Load enhanced fingerprint data
       const { data: fingerprints } = await supabase
@@ -189,7 +223,7 @@ const AdminDashboard: React.FC = () => {
       setHighRiskFingerprints(highRiskFingerprints || [])
 
       // Load recent visits
-      const { data: visits } = await supabase
+      const { data: visits, error: visitsError } = await supabase
         .from('url_visits')
         .select(`
           *,
@@ -204,6 +238,13 @@ const AdminDashboard: React.FC = () => {
         `)
         .order('visited_at', { ascending: false })
         .limit(20)
+
+      if (visitsError) {
+        console.error('❌ Error loading recent visits:', visitsError)
+        toast.error('Failed to load recent visits')
+      } else {
+        console.log('✅ Recent visits loaded:', visits?.length || 0, 'visits')
+      }
 
       setRecentVisits(visits || [])
 
@@ -1048,12 +1089,34 @@ const AdminDashboard: React.FC = () => {
         </div>
 
         {/* Refresh Button */}
-        <div className="mt-6 text-center">
+        <div className="mt-6 text-center space-x-4">
           <button
             onClick={loadDashboardData}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
           >
             Refresh Data
+          </button>
+          
+          <button
+            onClick={async () => {
+              console.log('🔍 Debug: Checking visit data...')
+              const { data: visits, error } = await supabase
+                .from('url_visits')
+                .select('*')
+                .order('visited_at', { ascending: false })
+                .limit(5)
+              
+              if (error) {
+                console.error('❌ Visit query error:', error)
+                toast.error(`Visit query failed: ${error.message}`)
+              } else {
+                console.log('📊 Recent visits in database:', visits)
+                toast.success(`Found ${visits?.length || 0} recent visits`)
+              }
+            }}
+            className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors"
+          >
+            Debug Visits
           </button>
         </div>
       </div>
