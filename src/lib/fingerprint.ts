@@ -163,11 +163,11 @@ export const getDeviceFingerprint = async () => {
       automation: components.automation?.value || !!(window as any).automation || !!(navigator as any).automation,
       
       // Enhanced GoLogin and automation detection
-      gologin: this.detectGoLogin(),
-      puppeteer: this.detectPuppeteer(),
-      playwright: this.detectPlaywright(),
-      stealthMode: this.detectStealthMode(),
-      automationSignals: this.detectAdvancedAutomationSignals(),
+      gologin: detectGoLogin(),
+      puppeteer: detectPuppeteer(),
+      playwright: detectPlaywright(),
+      stealthMode: detectStealthMode(),
+      automationSignals: detectAdvancedAutomationSignals(),
       // Browser-specific components
       chrome: components.chrome?.value || !!(window as any).chrome && !!(window as any).chrome.runtime,
       firefox: components.firefox?.value || !!(window as any).InstallTrigger,

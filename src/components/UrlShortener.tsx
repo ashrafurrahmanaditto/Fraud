@@ -3,6 +3,7 @@ import { supabase, Url, Fingerprint } from '../lib/supabase'
 import { getOrCreateFingerprint, checkRateLimit, logRiskEvent } from '../lib/fingerprint'
 import { performFraudDetection } from '../lib/fraudDetection'
 import { AdvancedFraudDetector } from '../lib/advancedFraudDetection'
+import { mlFraudDetector } from '../lib/mlFraudDetection'
 import toast from 'react-hot-toast'
 
 const UrlShortener: React.FC = () => {
@@ -138,6 +139,20 @@ const UrlShortener: React.FC = () => {
     try {
       console.log('🔍 Running comprehensive fraud detection...')
       
+      // Get fingerprint data for ML detection
+      const { data: fingerprintData } = await supabase
+        .from('fingerprints')
+        .select('device_info, browser_info')
+        .eq('id', fingerprintId)
+        .single()
+      
+      // Run ML-based fraud detection
+      let mlResult = null
+      if (fingerprintData) {
+        mlResult = await mlFraudDetector.detectFraud(fingerprintData.device_info)
+        console.log('🤖 ML Fraud Detection:', mlResult)
+      }
+      
       // Run comprehensive fraud detection
       const fraudResult = await performFraudDetection(fingerprintId, originalUrl)
       
@@ -152,53 +167,63 @@ const UrlShortener: React.FC = () => {
         ...fraudResult.reasons,
         ...botDetection.reasons,
         ...multiAccountDetection.reasons,
-        ...clickFraudDetection.reasons
+        ...clickFraudDetection.reasons,
+        ...(mlResult?.anomalies || []),
+        ...(mlResult?.botSignals || [])
       ]
       
       const maxRiskScore = Math.max(
         fraudResult.riskScore,
         botDetection.riskScore,
         multiAccountDetection.riskScore,
-        clickFraudDetection.riskScore
+        clickFraudDetection.riskScore,
+        mlResult?.riskScore || 0
       )
       
       const maxSeverity = Math.max(
         fraudResult.severity,
         botDetection.severity,
         multiAccountDetection.severity,
-        clickFraudDetection.severity
+        clickFraudDetection.severity,
+        mlResult?.isFraudulent ? 4 : 1
       )
       
       // Log comprehensive fraud detection results
-      if (allReasons.length > 0) {
+      if (allReasons.length > 0 || mlResult?.isFraudulent) {
         console.log('🚨 Fraud detected:', {
           reasons: allReasons,
           riskScore: maxRiskScore,
           severity: maxSeverity,
           fingerprintId,
-          url: originalUrl
+          url: originalUrl,
+          mlResult,
+          detectionSummary: mlResult ? mlFraudDetector.getDetectionSummary(mlResult) : null
         })
         
         await logRiskEvent(
           fingerprintId,
           'comprehensive_fraud_detection',
-          `Advanced fraud detection triggered: ${allReasons.join(', ')}`,
+          `Advanced fraud detection triggered: ${allReasons.join(', ')}${mlResult ? ` | ML: ${mlFraudDetector.getDetectionSummary(mlResult)}` : ''}`,
           maxSeverity,
           {
             fraudResult,
             botDetection,
             multiAccountDetection,
             clickFraudDetection,
+            mlResult,
             originalUrl,
             timestamp: new Date().toISOString()
           }
         )
         
         // Show warning to user if high risk
-        if (maxRiskScore >= 5) {
-          toast.error(`High-risk activity detected: ${allReasons[0]}`)
+        if (maxRiskScore >= 5 || mlResult?.isFraudulent) {
+          const message = mlResult?.isFraudulent 
+            ? `🚨 ML Fraud Detection: ${mlFraudDetector.getDetectionSummary(mlResult)}`
+            : `High-risk activity detected: ${allReasons[0]}`
+          toast.error(message)
         } else if (maxRiskScore >= 3) {
-          toast.warning(`Suspicious activity detected: ${allReasons[0]}`)
+          toast.error(`Suspicious activity detected: ${allReasons[0]}`)
         }
       } else {
         console.log('✅ No fraud detected')
