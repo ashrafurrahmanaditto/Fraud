@@ -310,8 +310,17 @@ export class MLFraudDetector {
     // Calculate final confidence
     confidence = Math.min(confidence + (anomalies.length * 0.1), 1)
 
+    // Debug logging
+    console.log('🔍 ML Fraud Detection Debug:', {
+      riskScore,
+      mlScore,
+      botSignals,
+      anomalies,
+      isFraudulent: riskScore >= 3 || mlScore > 0.5 || botSignals.length > 0 || anomalies.length >= 2
+    })
+
     return {
-      isFraudulent: riskScore >= 3 || mlScore > 0.5 || botSignals.length > 0 || anomalies.length >= 2,
+      isFraudulent: riskScore >= 5 || mlScore > 0.7 || botSignals.length > 2 || anomalies.length >= 3,
       confidence,
       riskScore,
       anomalies,

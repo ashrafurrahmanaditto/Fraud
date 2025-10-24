@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase, Url, Fingerprint } from '../lib/supabase'
-import { getOrCreateFingerprint, checkRateLimit, logRiskEvent } from '../lib/fingerprint'
+import { getOrCreateFingerprint, checkRateLimit, logRiskEvent, logUrlVisit } from '../lib/fingerprint'
 import { performFraudDetection } from '../lib/fraudDetection'
 import { AdvancedFraudDetector } from '../lib/advancedFraudDetection'
 import { mlFraudDetector } from '../lib/mlFraudDetection'
@@ -41,6 +41,8 @@ const UrlShortener: React.FC = () => {
   const shortenUrl = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    console.log('🚀 Starting URL shortening process...')
+    
     if (!url.trim()) {
       toast.error('Please enter a valid URL')
       return
@@ -54,11 +56,13 @@ const UrlShortener: React.FC = () => {
       return
     }
 
+    console.log('📝 URL validation passed:', url)
     setLoading(true)
 
     try {
       // If no fingerprint (Supabase not configured), just generate a local short code
       if (!fingerprint) {
+        console.log('⚠️ No fingerprint available - using local mode')
         const shortCode = generateShortCode()
         const shortUrl = `${window.location.origin}/${shortCode}`
         setShortenedUrl(shortUrl)
@@ -68,8 +72,13 @@ const UrlShortener: React.FC = () => {
         return
       }
 
+      console.log('📱 Fingerprint available:', fingerprint.id)
+
       // Check rate limit
+      console.log('⏱️ Checking rate limit...')
       const rateLimitOk = await checkRateLimit(fingerprint.id, 'url_creation')
+      console.log('⏱️ Rate limit check result:', rateLimitOk)
+      
       if (!rateLimitOk) {
         toast.error('Rate limit exceeded. Please try again later.')
         setLoading(false)
@@ -77,7 +86,9 @@ const UrlShortener: React.FC = () => {
       }
 
       // Generate short code
+      console.log('🔗 Generating short code...')
       let shortCode = generateShortCode()
+      console.log('🔗 Initial short code:', shortCode)
       
       // Ensure uniqueness
       let attempts = 0
@@ -100,7 +111,10 @@ const UrlShortener: React.FC = () => {
         return
       }
 
+      console.log('🔗 Final short code:', shortCode)
+
       // Create URL record
+      console.log('💾 Saving URL to database...')
       const { data, error } = await supabase
         .from('urls')
         .insert({
@@ -112,17 +126,26 @@ const UrlShortener: React.FC = () => {
         .single()
 
       if (error) {
-        console.error('Error creating URL:', error)
+        console.error('❌ Database error:', error)
         toast.error('Failed to shorten URL. Please try again.')
         setLoading(false)
         return
       }
 
+      console.log('✅ URL saved successfully:', data)
+
       const shortUrl = `${window.location.origin}/${shortCode}`
       setShortenedUrl(shortUrl)
 
+      // Log this URL creation as a visit (for counting purposes)
+      console.log('📊 Logging URL creation as visit...')
+      await logUrlVisit(data.id, fingerprint.id)
+      console.log('📊 Visit logged successfully')
+
       // Check for suspicious patterns and log risk events
+      console.log('🔍 Running fraud detection...')
       await checkForSuspiciousActivity(fingerprint.id, url)
+      console.log('🔍 Fraud detection completed')
 
       toast.success('URL shortened successfully!')
       setUrl('')
@@ -188,6 +211,20 @@ const UrlShortener: React.FC = () => {
         mlResult?.isFraudulent ? 4 : 1
       )
       
+      // Debug logging for all visits
+      console.log('🔍 Visit Debug Info:', {
+        fingerprintId,
+        url: originalUrl,
+        allReasons,
+        maxRiskScore,
+        maxSeverity,
+        mlResult,
+        fraudResult,
+        botDetection,
+        multiAccountDetection,
+        clickFraudDetection
+      })
+
       // Log comprehensive fraud detection results
       if (allReasons.length > 0 || mlResult?.isFraudulent) {
         console.log('🚨 Fraud detected:', {
