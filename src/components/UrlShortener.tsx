@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { supabase, Url, Fingerprint } from '../lib/supabase'
 import { getOrCreateFingerprint, checkRateLimit, logRiskEvent } from '../lib/fingerprint'
+import { performFraudDetection } from '../lib/fraudDetection'
+import { AdvancedFraudDetector } from '../lib/advancedFraudDetection'
 import toast from 'react-hot-toast'
 
 const UrlShortener: React.FC = () => {
@@ -134,40 +136,72 @@ const UrlShortener: React.FC = () => {
 
   const checkForSuspiciousActivity = async (fingerprintId: string, originalUrl: string) => {
     try {
-      // Check for spam patterns
-      const spamPatterns = [
-        /bit\.ly/i,
-        /tinyurl/i,
-        /short\.link/i,
-        /t\.co/i,
-        /goo\.gl/i
+      console.log('🔍 Running comprehensive fraud detection...')
+      
+      // Run comprehensive fraud detection
+      const fraudResult = await performFraudDetection(fingerprintId, originalUrl)
+      
+      // Run advanced fraud detection
+      const fraudDetector = AdvancedFraudDetector.getInstance()
+      const botDetection = await fraudDetector.detectBotSignals(fingerprintId)
+      const multiAccountDetection = await fraudDetector.detectMultiAccountReuse(fingerprintId)
+      const clickFraudDetection = await fraudDetector.detectClickFraud(fingerprintId)
+      
+      // Combine all detection results
+      const allReasons = [
+        ...fraudResult.reasons,
+        ...botDetection.reasons,
+        ...multiAccountDetection.reasons,
+        ...clickFraudDetection.reasons
       ]
-
-      const isSpam = spamPatterns.some(pattern => pattern.test(originalUrl))
-      if (isSpam) {
+      
+      const maxRiskScore = Math.max(
+        fraudResult.riskScore,
+        botDetection.riskScore,
+        multiAccountDetection.riskScore,
+        clickFraudDetection.riskScore
+      )
+      
+      const maxSeverity = Math.max(
+        fraudResult.severity,
+        botDetection.severity,
+        multiAccountDetection.severity,
+        clickFraudDetection.severity
+      )
+      
+      // Log comprehensive fraud detection results
+      if (allReasons.length > 0) {
+        console.log('🚨 Fraud detected:', {
+          reasons: allReasons,
+          riskScore: maxRiskScore,
+          severity: maxSeverity,
+          fingerprintId,
+          url: originalUrl
+        })
+        
         await logRiskEvent(
           fingerprintId,
-          'spam_attempt',
-          `Suspicious URL pattern detected: ${originalUrl}`,
-          2,
-          { originalUrl }
+          'comprehensive_fraud_detection',
+          `Advanced fraud detection triggered: ${allReasons.join(', ')}`,
+          maxSeverity,
+          {
+            fraudResult,
+            botDetection,
+            multiAccountDetection,
+            clickFraudDetection,
+            originalUrl,
+            timestamp: new Date().toISOString()
+          }
         )
-      }
-
-      // Check for multiple URLs from same fingerprint
-      const { data: urlCount } = await supabase
-        .from('urls')
-        .select('id', { count: 'exact' })
-        .eq('fingerprint_id', fingerprintId)
-
-      if (urlCount && urlCount.length > 5) {
-        await logRiskEvent(
-          fingerprintId,
-          'multiple_urls',
-          `High volume URL creation: ${urlCount.length} URLs`,
-          3,
-          { urlCount: urlCount.length }
-        )
+        
+        // Show warning to user if high risk
+        if (maxRiskScore >= 5) {
+          toast.error(`High-risk activity detected: ${allReasons[0]}`)
+        } else if (maxRiskScore >= 3) {
+          toast.warning(`Suspicious activity detected: ${allReasons[0]}`)
+        }
+      } else {
+        console.log('✅ No fraud detected')
       }
 
     } catch (error) {

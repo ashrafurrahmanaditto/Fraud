@@ -4,6 +4,119 @@ import { supabase } from './supabase'
 
 let fpPromise: Promise<any> | null = null
 
+// Enhanced automation detection methods
+const detectGoLogin = () => {
+  // Check for GoLogin specific indicators
+  const indicators = [
+    // Check for GoLogin specific properties
+    !!(window as any).gologin,
+    !!(window as any).gologinProfile,
+    !!(window as any).gologinBrowser,
+    // Check for modified navigator properties
+    navigator.webdriver === false && (window as any).chrome && !(window as any).chrome.runtime,
+    // Check for suspicious user agent patterns
+    /GoLogin|Automation|Headless/i.test(navigator.userAgent),
+    // Check for missing or modified properties
+    !navigator.plugins || navigator.plugins.length === 0,
+    // Check for timing inconsistencies
+    performance.now() < 100
+  ]
+  
+  return indicators.filter(Boolean).length >= 2
+}
+
+const detectPuppeteer = () => {
+  const indicators = [
+    !!(window as any).puppeteer,
+    !!(window as any).__puppeteer,
+    !!(window as any).__nightmare,
+    !!(window as any).callPhantom,
+    !!(window as any)._phantom,
+    // Check for missing properties that Puppeteer often removes
+    !navigator.permissions,
+    !navigator.mediaDevices,
+    // Check for suspicious timing
+    performance.now() < 50
+  ]
+  
+  return indicators.filter(Boolean).length >= 2
+}
+
+const detectPlaywright = () => {
+  const indicators = [
+    !!(window as any).playwright,
+    !!(window as any).__playwright,
+    // Check for Playwright specific properties
+    !!(window as any).playwrightElectron,
+    // Check for modified navigator
+    navigator.webdriver === false && !navigator.permissions,
+    // Check for suspicious patterns
+    /Playwright|Electron/i.test(navigator.userAgent)
+  ]
+  
+  return indicators.filter(Boolean).length >= 1
+}
+
+const detectStealthMode = () => {
+  const indicators = [
+    // Check for stealth mode indicators
+    navigator.webdriver === false && (window as any).chrome && !(window as any).chrome.runtime,
+    // Check for missing automation properties
+    !(window as any).webdriver && !(navigator as any).webdriver,
+    // Check for suspicious timing patterns
+    performance.now() < 100 && performance.now() > 0,
+    // Check for modified navigator properties
+    navigator.plugins && navigator.plugins.length > 0 && !navigator.permissions,
+    // Check for canvas fingerprinting evasion
+    document.createElement('canvas').getContext('2d') && performance.now() < 200
+  ]
+  
+  return indicators.filter(Boolean).length >= 3
+}
+
+const detectAdvancedAutomationSignals = () => {
+  const signals = []
+  
+  // Check for automation frameworks
+  if (!!(window as any).webdriver) signals.push('webdriver')
+  if (!!(window as any).selenium) signals.push('selenium')
+  if (!!(window as any).phantom) signals.push('phantom')
+  if (!!(window as any).puppeteer) signals.push('puppeteer')
+  if (!!(window as any).playwright) signals.push('playwright')
+  if (!!(window as any).gologin) signals.push('gologin')
+  
+  // Check for headless indicators
+  if (!navigator.permissions) signals.push('no_permissions')
+  if (!navigator.mediaDevices) signals.push('no_media_devices')
+  if (navigator.plugins.length === 0) signals.push('no_plugins')
+  if (navigator.hardwareConcurrency === 0) signals.push('no_hardware_concurrency')
+  if ((navigator as any).deviceMemory === 0) signals.push('no_device_memory')
+  
+  // Check for timing inconsistencies
+  const timing = performance.now()
+  if (timing < 50) signals.push('suspicious_timing')
+  if (timing > 1000) signals.push('slow_timing')
+  
+  // Check for canvas fingerprinting evasion
+  try {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.textBaseline = 'top'
+      ctx.font = '14px Arial'
+      ctx.fillText('test', 2, 2)
+      const imageData = ctx.getImageData(0, 0, 100, 100)
+      if (imageData.data.every(pixel => pixel === 0)) {
+        signals.push('canvas_evasion')
+      }
+    }
+  } catch (e) {
+    signals.push('canvas_error')
+  }
+  
+  return signals
+}
+
 // Initialize FingerprintJS with enhanced configuration
 export const initializeFingerprint = async () => {
   if (!fpPromise) {
@@ -48,6 +161,13 @@ export const getDeviceFingerprint = async () => {
       selenium: components.selenium?.value || !!(window as any).selenium || !!(window as any).seleniumIDE,
       headless: components.headless?.value || !!(window as any).headless || !!(navigator as any).headless,
       automation: components.automation?.value || !!(window as any).automation || !!(navigator as any).automation,
+      
+      // Enhanced GoLogin and automation detection
+      gologin: this.detectGoLogin(),
+      puppeteer: this.detectPuppeteer(),
+      playwright: this.detectPlaywright(),
+      stealthMode: this.detectStealthMode(),
+      automationSignals: this.detectAdvancedAutomationSignals(),
       // Browser-specific components
       chrome: components.chrome?.value || !!(window as any).chrome && !!(window as any).chrome.runtime,
       firefox: components.firefox?.value || !!(window as any).InstallTrigger,
