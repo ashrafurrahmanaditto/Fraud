@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase, Url, Fingerprint } from '../lib/supabase'
-import { getOrCreateFingerprint, checkRateLimit, logRiskEvent, logUrlVisit } from '../lib/fingerprint'
+import { getOrCreateFingerprint, checkRateLimit, logRiskEvent, logUrlVisit, getUrlVisitCount } from '../lib/fingerprint'
 import { performFraudDetection } from '../lib/fraudDetection'
 import { AdvancedFraudDetector } from '../lib/advancedFraudDetection'
 import { mlFraudDetector } from '../lib/mlFraudDetection'
@@ -11,6 +11,8 @@ const UrlShortener: React.FC = () => {
   const [shortenedUrl, setShortenedUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [fingerprint, setFingerprint] = useState<Fingerprint | null>(null)
+  const [visitCount, setVisitCount] = useState<number | null>(null)
+  const [testingVisits, setTestingVisits] = useState(false)
 
   useEffect(() => {
     // Initialize fingerprint on component mount
@@ -139,8 +141,14 @@ const UrlShortener: React.FC = () => {
 
       // Log this URL creation as a visit (for counting purposes)
       console.log('📊 Logging URL creation as visit...')
-      await logUrlVisit(data.id, fingerprint.id)
-      console.log('📊 Visit logged successfully')
+      try {
+        await logUrlVisit(data.id, fingerprint.id)
+        console.log('📊 Visit logged successfully')
+      } catch (visitError) {
+        console.error('❌ Error logging URL creation visit:', visitError)
+        // Don't fail the entire operation if visit logging fails
+        toast.error('Visit logging failed, but URL was created successfully')
+      }
 
       // Check for suspicious patterns and log risk events
       console.log('🔍 Running fraud detection...')
@@ -149,6 +157,11 @@ const UrlShortener: React.FC = () => {
 
       toast.success('URL shortened successfully!')
       setUrl('')
+      
+      // Refresh visit count for the new URL
+      setTimeout(() => {
+        refreshVisitCount()
+      }, 1000)
 
     } catch (error) {
       console.error('Error shortening URL:', error)
@@ -280,6 +293,75 @@ const UrlShortener: React.FC = () => {
     }
   }
 
+  const testVisitCounting = async () => {
+    if (!shortenedUrl) {
+      toast.error('Please create a shortened URL first')
+      return
+    }
+
+    setTestingVisits(true)
+    try {
+      // Extract URL ID from the shortened URL (this is a simplified approach)
+      const urlParts = shortenedUrl.split('/')
+      const shortCode = urlParts[urlParts.length - 1]
+      
+      // Get the URL record to find the ID
+      const { data: urlData } = await supabase
+        .from('urls')
+        .select('id')
+        .eq('short_code', shortCode)
+        .single()
+
+      if (!urlData) {
+        toast.error('Could not find URL record')
+        return
+      }
+
+      // Test visit logging
+      if (fingerprint) {
+        await logUrlVisit(urlData.id, fingerprint.id)
+        toast.success('Test visit logged successfully!')
+      } else {
+        await logUrlVisit(urlData.id)
+        toast.success('Test visit logged successfully (no fingerprint)!')
+      }
+
+      // Get updated visit count
+      const count = await getUrlVisitCount(urlData.id)
+      setVisitCount(count)
+      
+      toast.success(`Visit count updated: ${count}`)
+      
+    } catch (error) {
+      console.error('Error testing visit counting:', error)
+      toast.error('Failed to test visit counting')
+    } finally {
+      setTestingVisits(false)
+    }
+  }
+
+  const refreshVisitCount = async () => {
+    if (!shortenedUrl) return
+
+    try {
+      const urlParts = shortenedUrl.split('/')
+      const shortCode = urlParts[urlParts.length - 1]
+      
+      const { data: urlData } = await supabase
+        .from('urls')
+        .select('id')
+        .eq('short_code', shortCode)
+        .single()
+
+      if (urlData) {
+        const count = await getUrlVisitCount(urlData.id)
+        setVisitCount(count)
+      }
+    } catch (error) {
+      console.error('Error refreshing visit count:', error)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8">
@@ -337,7 +419,7 @@ const UrlShortener: React.FC = () => {
                 <h3 className="text-sm font-medium text-green-800 mb-2">
                   Shortened URL:
                 </h3>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 mb-3">
                   <input
                     type="text"
                     value={shortenedUrl}
@@ -349,6 +431,30 @@ const UrlShortener: React.FC = () => {
                     className="px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors"
                   >
                     Copy
+                  </button>
+                </div>
+                
+                {/* Visit Count Display */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <span className="text-sm text-green-700">
+                      <strong>Visits:</strong> {visitCount !== null ? visitCount : 'Loading...'}
+                    </span>
+                    <button
+                      onClick={refreshVisitCount}
+                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors"
+                    >
+                      Refresh Count
+                    </button>
+                  </div>
+                  
+                  {/* Test Visit Button */}
+                  <button
+                    onClick={testVisitCounting}
+                    disabled={testingVisits}
+                    className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded text-xs hover:bg-yellow-200 transition-colors disabled:opacity-50"
+                  >
+                    {testingVisits ? 'Testing...' : 'Test Visit'}
                   </button>
                 </div>
               </div>

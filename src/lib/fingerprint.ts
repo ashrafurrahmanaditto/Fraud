@@ -481,27 +481,91 @@ export const getOrCreateFingerprint = async () => {
 // Log URL visit with fingerprint
 export const logUrlVisit = async (urlId: string, fingerprintId?: string) => {
   try {
+    console.log('📊 Logging visit for URL:', urlId, 'Fingerprint:', fingerprintId)
+    
+    // Validate inputs
+    if (!urlId) {
+      throw new Error('URL ID is required')
+    }
+    
     const browserInfo = getBrowserInfo()
+    
+    const visitData = {
+      url_id: urlId,
+      fingerprint_id: fingerprintId || null,
+      ip_address: null, // Will be handled by Supabase Edge Functions
+      referrer: document.referrer || null,
+      user_agent: browserInfo.userAgent,
+      visited_at: new Date().toISOString(),
+      metadata: {
+        timestamp: Date.now(),
+        url: window.location.href,
+        language: navigator.language,
+        platform: navigator.platform
+      }
+    }
+    
+    console.log('📊 Visit data:', visitData)
     
     const { data, error } = await supabase
       .from('url_visits')
-      .insert({
-        url_id: urlId,
-        fingerprint_id: fingerprintId,
-        ip_address: null, // Will be handled by Supabase Edge Functions
-        referrer: document.referrer || null,
-        user_agent: browserInfo.userAgent
-      })
+      .insert(visitData)
+      .select()
 
     if (error) {
-      console.error('Error logging visit:', error)
-      return false
+      console.error('❌ Error logging visit:', error)
+      throw new Error(`Failed to log visit: ${error.message}`)
     }
 
-    return true
+    console.log('✅ Visit logged successfully:', data)
+    return data
   } catch (error) {
-    console.error('Error logging visit:', error)
-    return false
+    console.error('❌ Error logging visit:', error)
+    throw error // Re-throw to let calling code handle it
+  }
+}
+
+// Get visit statistics for a URL
+export const getUrlVisitStats = async (urlId: string) => {
+  try {
+    console.log('📊 Getting visit stats for URL:', urlId)
+    
+    const { data, error } = await supabase
+      .from('url_visits')
+      .select('*')
+      .eq('url_id', urlId)
+      .order('visited_at', { ascending: false })
+
+    if (error) {
+      console.error('❌ Error getting visit stats:', error)
+      throw new Error(`Failed to get visit stats: ${error.message}`)
+    }
+
+    console.log('✅ Visit stats retrieved:', data?.length || 0, 'visits')
+    return data || []
+  } catch (error) {
+    console.error('❌ Error getting visit stats:', error)
+    throw error
+  }
+}
+
+// Get total visit count for a URL
+export const getUrlVisitCount = async (urlId: string) => {
+  try {
+    const { count, error } = await supabase
+      .from('url_visits')
+      .select('*', { count: 'exact', head: true })
+      .eq('url_id', urlId)
+
+    if (error) {
+      console.error('❌ Error getting visit count:', error)
+      throw new Error(`Failed to get visit count: ${error.message}`)
+    }
+
+    return count || 0
+  } catch (error) {
+    console.error('❌ Error getting visit count:', error)
+    throw error
   }
 }
 

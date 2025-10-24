@@ -42,18 +42,43 @@ const RedirectHandler: React.FC = () => {
         // Get fingerprint for tracking
         const fingerprint = await getOrCreateFingerprint()
         
-        // Log the visit
-        if (fingerprint) {
-          await logUrlVisit(urlData.id, fingerprint.id)
+        // Log the visit and update click count atomically
+        try {
+          console.log('📊 Starting visit tracking for URL:', urlData.id)
+          
+          // Log the visit first
+          if (fingerprint) {
+            await logUrlVisit(urlData.id, fingerprint.id)
+            console.log('✅ Visit logged successfully')
+          } else {
+            console.log('⚠️ No fingerprint available, logging visit without fingerprint')
+            await logUrlVisit(urlData.id)
+          }
+
+          // Update click count
+          const { error: updateError } = await supabase
+            .from('urls')
+            .update({ 
+              click_count: urlData.click_count + 1,
+              last_clicked_at: new Date().toISOString()
+            })
+            .eq('id', urlData.id)
+
+          if (updateError) {
+            console.error('❌ Error updating click count:', updateError)
+            throw new Error(`Failed to update click count: ${updateError.message}`)
+          }
+
+          console.log('✅ Click count updated successfully')
+          
+        } catch (visitError) {
+          console.error('❌ Error during visit tracking:', visitError)
+          // Don't block the redirect if visit tracking fails
+          toast.error('Visit tracking failed, but redirecting anyway')
         }
 
-        // Update click count
-        await supabase
-          .from('urls')
-          .update({ click_count: urlData.click_count + 1 })
-          .eq('id', urlData.id)
-
         // Redirect to original URL
+        console.log('🔄 Redirecting to:', urlData.original_url)
         window.location.href = urlData.original_url
 
       } catch (error) {
